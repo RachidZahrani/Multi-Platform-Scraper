@@ -182,31 +182,15 @@ class ComprehensiveScraper {
   }
 
   async searchPlatform(platform) {
-    switch (platform.type) {
-      case "maps":
-        await this.scrapeGoogleMaps();
-        break;
-      case "linkedin":
-        await this.scrapeLinkedIn();
-        break;
-      case "google":
-        await this.scrapeGoogleSearch();
-        break;
-      case "yellowpages":
-        await this.scrapeYellowPages();
-        break;
-      case "facebook":
-        await this.scrapeFacebook();
-        break;
-      case "directories":
-        await this.scrapeProfessionalDirectories();
-        break;
-      case "medical":
-        await this.scrapeMedicalDirectories();
-        break;
-      case "local":
-        await this.scrapeLocalBusinessSites();
-        break;
+    const methodName = `scrape${platform.name.replace(/\s/g, "")}`;
+    if (typeof this[methodName] === "function") {
+      try {
+        await this[methodName]();
+      } catch (error) {
+        console.error(`❌ Error with ${platform.name}: ${error.message}`);
+      }
+    } else {
+      console.error(`❌ Scraper for ${platform.name} not implemented.`);
     }
   }
 
