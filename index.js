@@ -2,6 +2,8 @@ const { input, select } = require("@inquirer/prompts");
 const puppeteer = require("puppeteer");
 const ExcelJS = require("exceljs");
 const cliProgress = require("cli-progress");
+const fs = require("fs");
+const PDFDocument = require("pdfkit");
 
 async function main() {
   console.log("🚀 Professional Multi-Platform Scraper v4.0\n");
@@ -61,14 +63,23 @@ async function main() {
           : "Must be a positive number.",
     });
   }
-
   const limit =
     limitOption === "custom" ? parseInt(customLimit) : parseInt(limitOption);
+
+  const fileFormat = await select({
+    message: "💾 Select the output file format:",
+    choices: [
+      { name: "📄 Excel (.xlsx)", value: "excel" },
+      { name: "📜 JSON (.json)", value: "json" },
+      { name: "🖨️ PDF (.pdf)", value: "pdf" },
+    ],
+  });
 
   console.log("\n" + "=".repeat(60));
   console.log(`🔍 Searching for: ${specificType} in ${city}, ${country}`);
   console.log(`🎯 Search Depth: ${searchDepth.toUpperCase()}`);
-  console.log(`📊 Target Results: ${limit}`);
+  console.log(`📊 Target Records: ${limit}`);
+  console.log(`💾 Output Format: ${fileFormat.toUpperCase()}`);
   console.log("=".repeat(60) + "\n");
 
   const browser = await puppeteer.launch({
@@ -94,20 +105,45 @@ async function main() {
   await browser.close();
 
   if (results.data.length > 0) {
-    await generateProfessionalExcel(
-      results.data,
-      results.fields,
-      specificType,
-      city,
-      country,
-      searchDepth
-    );
+    let filename;
+    switch (fileFormat) {
+      case "excel":
+        filename = await generateExcel(
+          results.data,
+          results.fields,
+          specificType,
+          city,
+          searchDepth
+        );
+        break;
+      case "json":
+        filename = await generateJSON(
+          results.data,
+          specificType,
+          city,
+          searchDepth
+        );
+        break;
+      case "pdf":
+        filename = await generatePDF(
+          results.data,
+          results.fields,
+          specificType,
+          city,
+          searchDepth
+        );
+        break;
+      default:
+        console.log("❌ Invalid file format selected.");
+        return;
+    }
+
     console.log("\n" + "🎉 ".repeat(20));
     console.log(`✅ SCRAPING COMPLETE!`);
     console.log(`📊 Total Records Found: ${results.data.length}`);
     console.log(`🌐 Platforms Searched: ${results.platformsSearched}`);
     console.log(`📋 Data Fields: ${results.fields.length}`);
-    console.log(`📁 Excel file saved with comprehensive data!`);
+    console.log(`📁 File saved as ${filename}!`);
     console.log("🎉 ".repeat(20));
   } else {
     console.log("\n❌ No data found. This might indicate:");
@@ -148,12 +184,10 @@ class ComprehensiveScraper {
 
   async executeProfessionalSearch(depth) {
     const platforms = this.getPlatformsByDepth(depth);
-
     this.progressBar.start(this.limit, 0, { platform: "Initializing..." });
 
     for (const platform of platforms) {
       if (this.allData.length >= this.limit) break;
-
       this.platformsSearched.push(platform.name);
 
       const scrapedCountBefore = this.allData.length;
@@ -173,10 +207,8 @@ class ComprehensiveScraper {
         );
       }
     }
-
     this.progressBar.update(this.allData.length);
     this.progressBar.stop();
-
     return {
       data: this.allData,
       fields: Array.from(this.allFields),
@@ -187,11 +219,7 @@ class ComprehensiveScraper {
   async searchPlatform(platform) {
     const methodName = `scrape${platform.name.replace(/\s/g, "")}`;
     if (typeof this[methodName] === "function") {
-      try {
-        await this[methodName]();
-      } catch (error) {
-        console.error(`❌ Error with ${platform.name}: ${error.message}`);
-      }
+      await this[methodName]();
     } else {
       console.error(`❌ Scraper for ${platform.name} not implemented.`);
     }
@@ -207,7 +235,6 @@ class ComprehensiveScraper {
     try {
       await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
       await page.waitForSelector('div[role="feed"]', { timeout: 30000 });
-
       let previousCount = 0;
       let stableCount = 0;
       const maxScrolls = Math.ceil(this.limit / 10) + 10;
@@ -335,7 +362,6 @@ class ComprehensiveScraper {
           });
           return profiles;
         });
-
         for (const profile of results) {
           if (this.allData.length >= this.limit) break;
           profile.platform = "LinkedIn";
@@ -389,7 +415,6 @@ class ComprehensiveScraper {
           this.profession,
           this.city
         );
-
         for (const profile of results) {
           if (this.allData.length >= this.limit) break;
           profile.platform = sourceType;
@@ -460,6 +485,7 @@ class ComprehensiveScraper {
             let phoneText =
               phoneEl.textContent || phoneEl.getAttribute("aria-label") || "";
             phoneText = phoneText.replace(/Phone:?\s*/i, "").trim();
+            phoneText = phoneText.replace(/^0+/, "").replace(/-/g, "");
             if (phoneText && phoneText.length > 5) {
               data.phone = phoneText;
               break;
@@ -513,14 +539,7 @@ class ComprehensiveScraper {
   }
 }
 
-async function generateProfessionalExcel(
-  data,
-  fields,
-  profession,
-  city,
-  country,
-  searchDepth
-) {
+async function generateExcel(data, fields, profession, city, searchDepth) {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("Professional Directory");
   const headers = ["#", ...fields];
@@ -549,7 +568,6 @@ async function generateProfessionalExcel(
   summarySheet.addRow(["Search Parameter", "Value"]);
   summarySheet.addRow(["Profession/Service", profession]);
   summarySheet.addRow(["City", city]);
-  summarySheet.addRow(["Country", country]);
   summarySheet.addRow(["Search Depth", searchDepth]);
   summarySheet.addRow(["Total Records Found", data.length]);
   summarySheet.addRow(["Search Date", new Date().toLocaleString()]);
@@ -571,6 +589,49 @@ async function generateProfessionalExcel(
     "_"
   )}_${searchDepth}_${timestamp}.xlsx`;
   await workbook.xlsx.writeFile(filename);
+  return filename;
+}
+
+async function generateJSON(data, profession, city, searchDepth) {
+  const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, "-");
+  const filename = `scraped_${profession.replace(/\s+/g, "_")}_${city.replace(
+    /\s+/g,
+    "_"
+  )}_${searchDepth}_${timestamp}.json`;
+  const jsonData = JSON.stringify(data, null, 2);
+  await fs.promises.writeFile(filename, jsonData);
+  return filename;
+}
+
+async function generatePDF(data, fields, profession, city, searchDepth) {
+  const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, "-");
+  const filename = `scraped_${profession.replace(/\s+/g, "_")}_${city.replace(
+    /\s+/g,
+    "_"
+  )}_${searchDepth}_${timestamp}.pdf`;
+  const doc = new PDFDocument();
+  doc.pipe(fs.createWriteStream(filename));
+
+  doc.fontSize(16).text(`Professional Scraped Data`, { align: "center" });
+  doc
+    .fontSize(12)
+    .text(`Search: ${profession} in ${city}`, { align: "center" });
+  doc.fontSize(10).text(`Records Found: ${data.length}`, { align: "center" });
+  doc.moveDown();
+
+  doc.fontSize(8);
+
+  data.forEach((record, index) => {
+    doc.text(`Record #${index + 1}:`);
+    fields.forEach((field) => {
+      if (record[field]) {
+        doc.text(`  ${field}: ${record[field]}`);
+      }
+    });
+    doc.moveDown();
+  });
+
+  doc.end();
   return filename;
 }
 

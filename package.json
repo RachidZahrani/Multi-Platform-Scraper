@@ -15,6 +15,7 @@
     "@inquirer/prompts": "^7.8.4",
     "cli-progress": "^3.12.0",
     "exceljs": "^4.4.0",
+    "pdfkit": "^0.17.1",
     "puppeteer": "^24.17.0"
   }
 }
