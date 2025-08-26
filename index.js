@@ -1,7 +1,6 @@
-const { input, select, confirm } = require("@inquirer/prompts");
+const { input, select } = require("@inquirer/prompts");
 const puppeteer = require("puppeteer");
 const ExcelJS = require("exceljs");
-const fs = require("fs");
 
 async function main() {
   console.log("🚀 Professional Multi-Platform Scraper v4.0\n");
@@ -231,8 +230,6 @@ class ComprehensiveScraper {
         return [];
     }
   }
-
-  // New and improved scraping functions
 
   async scrapeGoogleMaps(limit) {
     const page = await this.browser.newPage();
