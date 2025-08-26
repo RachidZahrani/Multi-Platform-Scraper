@@ -26,6 +26,7 @@ async function main() {
   const searchDepth = await select({
     message: "🎯 Search intensity level:",
     choices: [
+      { name: "🗺️ Only Google Maps", value: "maps-only" },
       { name: "🔍 Quick Search (Google Maps + Basic Web)", value: "quick" },
       {
         name: "🌐 Comprehensive (Maps, LinkedIn, Local Directories)",
@@ -110,9 +111,9 @@ async function main() {
     console.log("🎉 ".repeat(20));
   } else {
     console.log("\n❌ No data found. This might indicate:");
-    console.log("    • Very specific search criteria");
-    console.log("    • Platform access issues");
-    console.log("    • Need to adjust search terms");
+    console.log("    • Very specific search criteria");
+    console.log("    • Platform access issues");
+    console.log("    • Need to adjust search terms");
   }
 }
 
@@ -130,6 +131,8 @@ class ComprehensiveScraper {
       "platform",
       "location",
       "profession_title",
+      "latitude",
+      "longitude",
     ]);
     this.seenProfiles = new Set();
     this.platformsSearched = [];
@@ -271,6 +274,10 @@ class ComprehensiveScraper {
         .catch(() => "");
 
       if (data.profile_url) {
+        const coords = this.extractCoordinatesFromUrl(data.profile_url);
+        data.latitude = coords.latitude;
+        data.longitude = coords.longitude;
+
         const detailData = await this.extractGoogleMapsDetails(
           data.profile_url
         );
@@ -280,6 +287,18 @@ class ComprehensiveScraper {
       return null;
     }
     return data;
+  }
+
+  extractCoordinatesFromUrl(url) {
+    const latLongRegex = /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/;
+    const match = url.match(latLongRegex);
+    if (match) {
+      return {
+        latitude: parseFloat(match[1]),
+        longitude: parseFloat(match[2]),
+      };
+    }
+    return { latitude: "", longitude: "" };
   }
 
   async scrapeLinkedIn() {
@@ -390,6 +409,7 @@ class ComprehensiveScraper {
 
   getPlatformsByDepth(depth) {
     const platforms = {
+      "maps-only": [{ name: "Google Maps", type: "maps" }],
       quick: [
         { name: "Google Maps", type: "maps" },
         { name: "Google Search", type: "google" },
