@@ -13,6 +13,7 @@
   "type": "commonjs",
   "dependencies": {
     "@inquirer/prompts": "^7.8.4",
+    "cli-progress": "^3.12.0",
     "exceljs": "^4.4.0",
     "puppeteer": "^24.17.0"
   }

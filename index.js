@@ -1,6 +1,7 @@
 const { input, select } = require("@inquirer/prompts");
 const puppeteer = require("puppeteer");
 const ExcelJS = require("exceljs");
+const cliProgress = require("cli-progress");
 
 async function main() {
   console.log("🚀 Professional Multi-Platform Scraper v4.0\n");
@@ -132,39 +133,46 @@ class ComprehensiveScraper {
     ]);
     this.seenProfiles = new Set();
     this.platformsSearched = [];
+
+    this.progressBar = new cliProgress.SingleBar({
+      format:
+        "🔍 Scraping Progress |{bar}| {percentage}% | {value}/{total} Records | Current: {platform}",
+      barCompleteChar: "\u2588",
+      barIncompleteChar: "\u2591",
+      hideCursor: true,
+    });
   }
 
   async executeProfessionalSearch(depth) {
     const platforms = this.getPlatformsByDepth(depth);
 
+    this.progressBar.start(this.limit, 0, { platform: "Initializing..." });
+
     for (const platform of platforms) {
       if (this.allData.length >= this.limit) break;
 
-      console.log(`🔍 Searching ${platform.name}...`);
       this.platformsSearched.push(platform.name);
 
+      const scrapedCountBefore = this.allData.length;
       try {
-        const remainingLimit = this.limit - this.allData.length;
-        const platformData = await this.searchPlatform(
-          platform,
-          remainingLimit
-        );
-
-        console.log(
-          `✅ Found ${platformData.length} unique profiles on ${platform.name}`
-        );
-
-        platformData.forEach((profile) => {
-          profile.platform = platform.name;
-          this.addUniqueProfile(profile);
-        });
-
-        await this.delay(2000);
+        await this.searchPlatform(platform);
       } catch (error) {
         console.error(`❌ Error with ${platform.name}: ${error.message}`);
         continue;
       }
+
+      const scrapedCountAfter = this.allData.length;
+      if (scrapedCountAfter > scrapedCountBefore) {
+        console.log(
+          `\n✅ Found ${
+            scrapedCountAfter - scrapedCountBefore
+          } new records on ${platform.name}`
+        );
+      }
     }
+
+    this.progressBar.update(this.allData.length);
+    this.progressBar.stop();
 
     return {
       data: this.allData,
@@ -173,133 +181,132 @@ class ComprehensiveScraper {
     };
   }
 
-  getPlatformsByDepth(depth) {
-    const platforms = {
-      quick: [
-        { name: "Google Maps", type: "maps" },
-        { name: "Google Search", type: "google" },
-      ],
-      comprehensive: [
-        { name: "Google Maps", type: "maps" },
-        { name: "LinkedIn", type: "linkedin" },
-        { name: "Professional Directories", type: "directories" },
-        { name: "Google Search", type: "google" },
-      ],
-      deep: [
-        { name: "Google Maps", type: "maps" },
-        { name: "LinkedIn", type: "linkedin" },
-        { name: "Professional Directories", type: "directories" },
-        { name: "Google Search", type: "google" },
-        { name: "Facebook Business", type: "facebook" },
-        { name: "Local Business Sites", type: "local" },
-      ],
-      ultra: [
-        { name: "Google Maps", type: "maps" },
-        { name: "LinkedIn", type: "linkedin" },
-        { name: "Professional Directories", type: "directories" },
-        { name: "Google Search", type: "google" },
-        { name: "Facebook Business", type: "facebook" },
-        { name: "Local Business Sites", type: "local" },
-        { name: "Yellow Pages", type: "yellowpages" },
-        { name: "Medical Directories", type: "medical" },
-      ],
-    };
-
-    return platforms[depth] || platforms.comprehensive;
-  }
-
-  async searchPlatform(platform, limit) {
+  async searchPlatform(platform) {
     switch (platform.type) {
       case "maps":
-        return await this.scrapeGoogleMaps(limit);
+        await this.scrapeGoogleMaps();
+        break;
       case "linkedin":
-        return await this.scrapeLinkedIn(limit);
+        await this.scrapeLinkedIn();
+        break;
       case "google":
-        return await this.scrapeGoogleSearch(limit);
+        await this.scrapeGoogleSearch();
+        break;
       case "yellowpages":
-        return await this.scrapeYellowPages(limit);
+        await this.scrapeYellowPages();
+        break;
       case "facebook":
-        return await this.scrapeFacebook(limit);
+        await this.scrapeFacebook();
+        break;
       case "directories":
-        return await this.scrapeProfessionalDirectories(limit);
+        await this.scrapeProfessionalDirectories();
+        break;
       case "medical":
-        return await this.scrapeMedicalDirectories(limit);
+        await this.scrapeMedicalDirectories();
+        break;
       case "local":
-        return await this.scrapeLocalBusinessSites(limit);
-      default:
-        return [];
+        await this.scrapeLocalBusinessSites();
+        break;
     }
   }
 
-  async scrapeGoogleMaps(limit) {
+  async scrapeGoogleMaps() {
     const page = await this.browser.newPage();
     await this.setupPage(page);
     const query = `${this.profession} ${this.city} ${this.country}`;
-    const url = `https://www.google.com/maps/search/${encodeURIComponent(
+    const url = `https://www.google.com/maps/search/$${encodeURIComponent(
       query
     )}`;
     try {
       await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
       await page.waitForSelector('div[role="feed"]', { timeout: 30000 });
-      await this.scrollAndLoad(page, limit);
-      const data = await page.evaluate(() => {
-        const results = [];
-        const cards = document.querySelectorAll(".Nv2PK");
-        cards.forEach((card) => {
-          try {
-            const nameEl = card.querySelector(".qBF1Pd, .fontHeadlineSmall");
-            const linkEl = card.querySelector("a.hfpxzc");
-            const categoryEl = card.querySelector(".W4Efsd");
-            const ratingEl = card.querySelector(".MW4etd");
-            const addressEl = card.querySelector(".W4Efsd:last-child");
-            if (nameEl && linkEl) {
-              results.push({
-                name: nameEl.textContent.trim(),
-                profile_url: linkEl.href,
-                profession_title: categoryEl
-                  ? categoryEl.textContent.trim()
-                  : "",
-                location: addressEl ? addressEl.textContent.trim() : "",
-                rating: ratingEl ? ratingEl.textContent.trim() : "",
-                phone: "",
-                website: "",
+
+      let previousCount = 0;
+      let stableCount = 0;
+      const maxScrolls = Math.ceil(this.limit / 10) + 10;
+      const scrollableSelector = 'div[role="feed"]';
+
+      for (let i = 0; i < maxScrolls; i++) {
+        const cards = await page.$$(".Nv2PK");
+        const currentCount = cards.length;
+
+        if (currentCount > previousCount) {
+          stableCount = 0;
+          for (let j = previousCount; j < currentCount; j++) {
+            if (this.allData.length >= this.limit) break;
+            const businessData = await this.extractBusinessData(cards[j]);
+            if (businessData) {
+              businessData.platform = "Google Maps";
+              this.addUniqueProfile(businessData);
+              this.progressBar.update(this.allData.length, {
+                platform: "Google Maps",
               });
             }
-          } catch (e) {}
-        });
-        return results;
-      });
-      for (let i = 0; i < Math.min(data.length, limit); i++) {
-        try {
-          const detailData = await this.extractGoogleMapsDetails(
-            data[i].profile_url
-          );
-          Object.assign(data[i], detailData);
-          Object.keys(data[i]).forEach((key) => {
-            if (data[i][key]) this.allFields.add(key);
-          });
-        } catch (e) {
-          continue;
+          }
+        } else {
+          stableCount++;
+          if (stableCount >= 3) break;
         }
+
+        previousCount = currentCount;
+        if (this.allData.length >= this.limit) break;
+
+        await page.evaluate((selector) => {
+          const element = document.querySelector(selector);
+          if (element) {
+            element.scrollTop = element.scrollHeight;
+          }
+        }, scrollableSelector);
+
+        await this.delay(3000);
       }
-      await page.close();
-      return data.slice(0, limit);
     } catch (error) {
+      console.error(`❌ Error scraping Google Maps: ${error.message}`);
+    } finally {
       await page.close();
-      return [];
     }
   }
 
-  async scrapeLinkedIn(limit) {
+  async extractBusinessData(card) {
+    const data = {};
+    try {
+      data.name = await card
+        .$eval(".qBF1Pd, .fontHeadlineSmall", (el) => el.textContent.trim())
+        .catch(() => "");
+      data.profile_url = await card
+        .$eval("a.hfpxzc", (el) => el.href)
+        .catch(() => "");
+      data.profession_title = await card
+        .$eval(".W4Efsd", (el) => el.textContent.trim())
+        .catch(() => "");
+      data.location = await card
+        .$eval(".W4Efsd:last-child", (el) => el.textContent.trim())
+        .catch(() => "");
+      data.rating = await card
+        .$eval(".MW4etd", (el) => el.textContent.trim())
+        .catch(() => "");
+
+      if (data.profile_url) {
+        const detailData = await this.extractGoogleMapsDetails(
+          data.profile_url
+        );
+        Object.assign(data, detailData);
+      }
+    } catch (e) {
+      return null;
+    }
+    return data;
+  }
+
+  async scrapeLinkedIn() {
     const page = await this.browser.newPage();
     await this.setupPage(page);
     const searches = [
       `site:linkedin.com/in "${this.profession}" "${this.city}"`,
       `site:linkedin.com/in "${this.profession}" "${this.country}"`,
     ];
-    const data = [];
     for (const searchQuery of searches) {
-      if (data.length >= limit) break;
+      if (this.allData.length >= this.limit) break;
       try {
         const url = `https://www.google.com/search?q=${encodeURIComponent(
           searchQuery
@@ -325,154 +332,27 @@ class ComprehensiveScraper {
           });
           return profiles;
         });
-        data.push(...results);
+
+        for (const profile of results) {
+          if (this.allData.length >= this.limit) break;
+          profile.platform = "LinkedIn";
+          this.addUniqueProfile(profile);
+          this.progressBar.update(this.allData.length, {
+            platform: "LinkedIn",
+          });
+        }
         await this.delay(2000);
       } catch (e) {
+        console.error(`❌ Error scraping LinkedIn: ${e.message}`);
         continue;
       }
     }
     await page.close();
-    return data.slice(0, limit);
   }
 
-  async scrapeGoogleSearch(limit) {
-    const page = await this.browser.newPage();
-    await this.setupPage(page);
-    const searches = [
-      `"${this.profession}" "${this.city}" "${this.country}" contact`,
-      `cabinet ${this.profession} ${this.city} adresse`,
-    ];
-    const data = [];
-    for (const searchQuery of searches) {
-      if (data.length >= limit) break;
-      try {
-        const url = `https://www.google.com/search?q=${encodeURIComponent(
-          searchQuery
-        )}&num=50`;
-        await page.goto(url, { waitUntil: "networkidle2" });
-        const results = await page.evaluate(
-          (profession, city) => {
-            const profiles = [];
-            const searchResults = document.querySelectorAll(".g, .tF2Cxc");
-            searchResults.forEach((result) => {
-              try {
-                const linkEl = result.querySelector('a[href^="http"]');
-                const titleEl = result.querySelector("h3");
-                const descEl = result.querySelector(".VwiC3b, .s3v9rd");
-                if (linkEl && titleEl) {
-                  const description = descEl ? descEl.textContent : "";
-                  profiles.push({
-                    name: titleEl.textContent.trim(),
-                    profile_url: linkEl.href,
-                    profession_title: profession,
-                    location: city,
-                    description: description.substring(0, 200),
-                  });
-                }
-              } catch (e) {}
-            });
-            return profiles;
-          },
-          this.profession,
-          this.city
-        );
-        data.push(...results);
-        await this.delay(2000);
-      } catch (e) {
-        continue;
-      }
-    }
-    await page.close();
-    return data.slice(0, limit);
-  }
-
-  async scrapeYellowPages(limit) {
-    const page = await this.browser.newPage();
-    await this.setupPage(page);
-    const yellowPagesQueries = [
-      `site:pagesjaunes.ma "${this.profession}" "${this.city}"`,
-      `site:telecontact.ma "${this.profession}" "${this.city}"`,
-    ];
-    return await this.searchGeneralDirectories(
-      page,
-      yellowPagesQueries,
-      limit,
-      "Yellow Pages"
-    );
-  }
-
-  async scrapeFacebook(limit) {
-    const page = await this.browser.newPage();
-    await this.setupPage(page);
-    const facebookQueries = [
-      `site:facebook.com/pages "${this.profession}" "${this.city}"`,
-      `site:facebook.com/public/${this.profession.replace(
-        /\s+/g,
-        "-"
-      )}-${this.city.replace(/\s+/g, "-")}`,
-    ];
-    return await this.searchGeneralDirectories(
-      page,
-      facebookQueries,
-      limit,
-      "Facebook Business"
-    );
-  }
-
-  async scrapeProfessionalDirectories(limit) {
-    const page = await this.browser.newPage();
-    await this.setupPage(page);
-    const directories = [
-      `annuaire "${this.profession}" "${this.city}" "${this.country}"`,
-    ];
-    return await this.searchGeneralDirectories(
-      page,
-      directories,
-      limit,
-      "Professional Directory"
-    );
-  }
-
-  async scrapeMedicalDirectories(limit) {
-    const page = await this.browser.newPage();
-    await this.setupPage(page);
-    if (
-      !this.profession.toLowerCase().includes("médecin") &&
-      !this.profession.toLowerCase().includes("docteur")
-    ) {
-      return [];
-    }
-    const medicalDirectories = [
-      `"ordre des médecins" "${this.city}" "${this.country}"`,
-      `annuaire médecin ${this.city} maroc`,
-    ];
-    return await this.searchGeneralDirectories(
-      page,
-      medicalDirectories,
-      limit,
-      "Medical Directory"
-    );
-  }
-
-  async scrapeLocalBusinessSites(limit) {
-    const page = await this.browser.newPage();
-    await this.setupPage(page);
-    const localQueries = [
-      `${this.profession} ${this.city} maroc contact telephone`,
-      `cabinet ${this.profession} ${this.city} rendez-vous`,
-    ];
-    return await this.searchGeneralDirectories(
-      page,
-      localQueries,
-      limit,
-      "Local Business Site"
-    );
-  }
-
-  async searchGeneralDirectories(page, queries, limit, sourceType) {
-    const data = [];
+  async searchGeneralDirectories(page, queries, sourceType) {
     for (const query of queries) {
-      if (data.length >= limit) break;
+      if (this.allData.length >= this.limit) break;
       try {
         const url = `https://www.google.com/search?q=${encodeURIComponent(
           query
@@ -506,14 +386,56 @@ class ComprehensiveScraper {
           this.profession,
           this.city
         );
-        data.push(...results);
+
+        for (const profile of results) {
+          if (this.allData.length >= this.limit) break;
+          profile.platform = sourceType;
+          this.addUniqueProfile(profile);
+          this.progressBar.update(this.allData.length, {
+            platform: sourceType,
+          });
+        }
         await this.delay(2000);
       } catch (e) {
+        console.error(`❌ Error scraping ${sourceType}: ${e.message}`);
         continue;
       }
     }
     await page.close();
-    return data.slice(0, limit);
+  }
+
+  getPlatformsByDepth(depth) {
+    const platforms = {
+      quick: [
+        { name: "Google Maps", type: "maps" },
+        { name: "Google Search", type: "google" },
+      ],
+      comprehensive: [
+        { name: "Google Maps", type: "maps" },
+        { name: "LinkedIn", type: "linkedin" },
+        { name: "Professional Directories", type: "directories" },
+        { name: "Google Search", type: "google" },
+      ],
+      deep: [
+        { name: "Google Maps", type: "maps" },
+        { name: "LinkedIn", type: "linkedin" },
+        { name: "Professional Directories", type: "directories" },
+        { name: "Google Search", type: "google" },
+        { name: "Facebook Business", type: "facebook" },
+        { name: "Local Business Sites", type: "local" },
+      ],
+      ultra: [
+        { name: "Google Maps", type: "maps" },
+        { name: "LinkedIn", type: "linkedin" },
+        { name: "Professional Directories", type: "directories" },
+        { name: "Google Search", type: "google" },
+        { name: "Facebook Business", type: "facebook" },
+        { name: "Local Business Sites", type: "local" },
+        { name: "Yellow Pages", type: "yellowpages" },
+        { name: "Medical Directories", type: "medical" },
+      ],
+    };
+    return platforms[depth] || platforms.comprehensive;
   }
 
   async extractGoogleMapsDetails(url) {
@@ -580,38 +502,6 @@ class ComprehensiveScraper {
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     );
     await page.setViewport({ width: 1920, height: 1080 });
-  }
-
-  async scrollAndLoad(page, targetCount) {
-    const scrollableSelector = 'div[role="feed"]';
-    let previousCount = 0;
-    let stableCount = 0;
-    const maxScrolls = Math.ceil(targetCount / 10) + 10;
-    for (let i = 0; i < maxScrolls; i++) {
-      const currentCards = await page.$$(".Nv2PK");
-      const currentCount = currentCards.length;
-      if (currentCount >= targetCount) break;
-      if (currentCount === previousCount) {
-        stableCount++;
-        if (stableCount >= 3) break;
-      } else {
-        stableCount = 0;
-      }
-      previousCount = currentCount;
-      try {
-        await page.evaluate((selector) => {
-          const element = document.querySelector(selector);
-          if (element) {
-            element.scrollTop = element.scrollHeight;
-          }
-        }, scrollableSelector);
-      } catch (e) {
-        await page.evaluate(() =>
-          window.scrollTo(0, document.body.scrollHeight)
-        );
-      }
-      await this.delay(3000);
-    }
   }
 
   async delay(ms) {
