@@ -265,21 +265,28 @@ class ComprehensiveScraper {
         await this.delay(3000);
       }
     } catch (error) {
-      console.error(`❌ Error scraping Google Maps: ${error.message}`);
+      if (error.message.includes("Waiting for selector")) {
+        console.error(
+          "\n❌ No relevant records found on Google Maps. Moving on to the next platform."
+        );
+      } else {
+        console.error(
+          `❌ An unexpected error occurred while scraping Google Maps: ${error.message}`
+        );
+      }
     } finally {
       await page.close();
     }
   }
 
   async scrapeGoogleSearch() {
-    const page = await this.browser.newPage();
-    await this.setupPage(page);
     const searches = [
       `"${this.profession}" "${this.city}" "${this.country}" contact`,
       `cabinet ${this.profession} ${this.city} adresse`,
     ];
     for (const searchQuery of searches) {
-      if (this.allData.length >= this.limit) break;
+      const page = await this.browser.newPage();
+      await this.setupPage(page);
       try {
         const url = `https://www.google.com/search?q=${encodeURIComponent(
           searchQuery
@@ -311,32 +318,39 @@ class ComprehensiveScraper {
           this.profession,
           this.city
         );
-        for (const profile of results) {
-          if (this.allData.length >= this.limit) break;
-          profile.platform = "Google Search";
-          this.addUniqueProfile(profile);
-          this.progressBar.update(this.allData.length, {
-            platform: "Google Search",
-          });
+        if (results.length > 0) {
+          for (const profile of results) {
+            if (this.allData.length >= this.limit) break;
+            profile.platform = "Google Search";
+            this.addUniqueProfile(profile);
+            this.progressBar.update(this.allData.length, {
+              platform: "Google Search",
+            });
+          }
+        } else {
+          console.log(
+            "\n❌ No relevant records found on Google Search. Moving on to the next platform."
+          );
         }
         await this.delay(2000);
       } catch (e) {
-        console.error(`❌ Error scraping Google Search: ${e.message}`);
-        continue;
+        console.error(
+          `❌ An unexpected error occurred while scraping Google Search: ${e.message}`
+        );
+      } finally {
+        await page.close();
       }
     }
-    await page.close();
   }
 
   async scrapeLinkedIn() {
-    const page = await this.browser.newPage();
-    await this.setupPage(page);
     const searches = [
       `site:linkedin.com/in "${this.profession}" "${this.city}"`,
       `site:linkedin.com/in "${this.profession}" "${this.country}"`,
     ];
     for (const searchQuery of searches) {
-      if (this.allData.length >= this.limit) break;
+      const page = await this.browser.newPage();
+      await this.setupPage(page);
       try {
         const url = `https://www.google.com/search?q=${encodeURIComponent(
           searchQuery
@@ -362,31 +376,38 @@ class ComprehensiveScraper {
           });
           return profiles;
         });
-        for (const profile of results) {
-          if (this.allData.length >= this.limit) break;
-          profile.platform = "LinkedIn";
-          this.addUniqueProfile(profile);
-          this.progressBar.update(this.allData.length, {
-            platform: "LinkedIn",
-          });
+        if (results.length > 0) {
+          for (const profile of results) {
+            if (this.allData.length >= this.limit) break;
+            profile.platform = "LinkedIn";
+            this.addUniqueProfile(profile);
+            this.progressBar.update(this.allData.length, {
+              platform: "LinkedIn",
+            });
+          }
+        } else {
+          console.log(
+            "\n❌ No relevant records found on LinkedIn. Moving on to the next platform."
+          );
         }
         await this.delay(2000);
       } catch (e) {
-        console.error(`❌ Error scraping LinkedIn: ${e.message}`);
-        continue;
+        console.error(
+          `❌ An unexpected error occurred while scraping LinkedIn: ${e.message}`
+        );
+      } finally {
+        await page.close();
       }
     }
-    await page.close();
   }
 
   async scrapeProfessionalDirectories() {
-    const page = await this.browser.newPage();
-    await this.setupPage(page);
     const directories = [
       `annuaire "${this.profession}" "${this.city}" "${this.country}"`,
     ];
     for (const query of directories) {
-      if (this.allData.length >= this.limit) break;
+      const page = await this.browser.newPage();
+      await this.setupPage(page);
       try {
         const url = `https://www.google.com/search?q=${encodeURIComponent(
           query
@@ -420,33 +441,39 @@ class ComprehensiveScraper {
           this.profession,
           this.city
         );
-        for (const profile of results) {
-          if (this.allData.length >= this.limit) break;
-          profile.platform = "Professional Directories";
-          this.addUniqueProfile(profile);
-          this.progressBar.update(this.allData.length, {
-            platform: "Professional Directories",
-          });
+        if (results.length > 0) {
+          for (const profile of results) {
+            if (this.allData.length >= this.limit) break;
+            profile.platform = "Professional Directories";
+            this.addUniqueProfile(profile);
+            this.progressBar.update(this.allData.length, {
+              platform: "Professional Directories",
+            });
+          }
+        } else {
+          console.log(
+            "\n❌ No relevant records found on Professional Directories. Moving on to the next platform."
+          );
         }
         await this.delay(2000);
       } catch (e) {
         console.error(
-          `❌ Error scraping Professional Directories: ${e.message}`
+          `❌ An unexpected error occurred while scraping Professional Directories: ${e.message}`
         );
-        continue;
+      } finally {
+        await page.close();
       }
     }
-    await page.close();
   }
+
   async scrapeYellowPages() {
-    const page = await this.browser.newPage();
-    await this.setupPage(page);
     const yellowPagesQueries = [
       `site:pagesjaunes.ma "${this.profession}" "${this.city}"`,
       `site:telecontact.ma "${this.profession}" "${this.city}"`,
     ];
     for (const query of yellowPagesQueries) {
-      if (this.allData.length >= this.limit) break;
+      const page = await this.browser.newPage();
+      await this.setupPage(page);
       try {
         const url = `https://www.google.com/search?q=${encodeURIComponent(
           query
@@ -480,26 +507,32 @@ class ComprehensiveScraper {
           this.profession,
           this.city
         );
-        for (const profile of results) {
-          if (this.allData.length >= this.limit) break;
-          profile.platform = "Yellow Pages";
-          this.addUniqueProfile(profile);
-          this.progressBar.update(this.allData.length, {
-            platform: "Yellow Pages",
-          });
+        if (results.length > 0) {
+          for (const profile of results) {
+            if (this.allData.length >= this.limit) break;
+            profile.platform = "Yellow Pages";
+            this.addUniqueProfile(profile);
+            this.progressBar.update(this.allData.length, {
+              platform: "Yellow Pages",
+            });
+          }
+        } else {
+          console.log(
+            "\n❌ No relevant records found on Yellow Pages. Moving on to the next platform."
+          );
         }
         await this.delay(2000);
       } catch (e) {
-        console.error(`❌ Error scraping Yellow Pages: ${e.message}`);
-        continue;
+        console.error(
+          `❌ An unexpected error occurred while scraping Yellow Pages: ${e.message}`
+        );
+      } finally {
+        await page.close();
       }
     }
-    await page.close();
   }
 
   async scrapeFacebook() {
-    const page = await this.browser.newPage();
-    await this.setupPage(page);
     const facebookQueries = [
       `site:facebook.com/pages "${this.profession}" "${this.city}"`,
       `site:facebook.com/public/${this.profession.replace(
@@ -508,7 +541,8 @@ class ComprehensiveScraper {
       )}-${this.city.replace(/\s+/g, "-")}`,
     ];
     for (const query of facebookQueries) {
-      if (this.allData.length >= this.limit) break;
+      const page = await this.browser.newPage();
+      await this.setupPage(page);
       try {
         const url = `https://www.google.com/search?q=${encodeURIComponent(
           query
@@ -541,32 +575,39 @@ class ComprehensiveScraper {
           this.profession,
           this.city
         );
-        for (const profile of results) {
-          if (this.allData.length >= this.limit) break;
-          profile.platform = "Facebook";
-          this.addUniqueProfile(profile);
-          this.progressBar.update(this.allData.length, {
-            platform: "Facebook",
-          });
+        if (results.length > 0) {
+          for (const profile of results) {
+            if (this.allData.length >= this.limit) break;
+            profile.platform = "Facebook";
+            this.addUniqueProfile(profile);
+            this.progressBar.update(this.allData.length, {
+              platform: "Facebook",
+            });
+          }
+        } else {
+          console.log(
+            "\n❌ No relevant records found on Facebook. Moving on to the next platform."
+          );
         }
         await this.delay(2000);
       } catch (e) {
-        console.error(`❌ Error scraping Facebook: ${e.message}`);
-        continue;
+        console.error(
+          `❌ An unexpected error occurred while scraping Facebook: ${e.message}`
+        );
+      } finally {
+        await page.close();
       }
     }
-    await page.close();
   }
 
   async scrapeLocalBusinessSites() {
-    const page = await this.browser.newPage();
-    await this.setupPage(page);
     const localQueries = [
       `${this.profession} ${this.city} maroc contact telephone`,
       `cabinet ${this.profession} ${this.city} rendez-vous`,
     ];
     for (const query of localQueries) {
-      if (this.allData.length >= this.limit) break;
+      const page = await this.browser.newPage();
+      await this.setupPage(page);
       try {
         const url = `https://www.google.com/search?q=${encodeURIComponent(
           query
@@ -600,38 +641,46 @@ class ComprehensiveScraper {
           this.profession,
           this.city
         );
-        for (const profile of results) {
-          if (this.allData.length >= this.limit) break;
-          profile.platform = "Local Business Sites";
-          this.addUniqueProfile(profile);
-          this.progressBar.update(this.allData.length, {
-            platform: "Local Business Sites",
-          });
+        if (results.length > 0) {
+          for (const profile of results) {
+            if (this.allData.length >= this.limit) break;
+            profile.platform = "Local Business Sites";
+            this.addUniqueProfile(profile);
+            this.progressBar.update(this.allData.length, {
+              platform: "Local Business Sites",
+            });
+          }
+        } else {
+          console.log(
+            "\n❌ No relevant records found on Local Business Sites. Moving on to the next platform."
+          );
         }
         await this.delay(2000);
       } catch (e) {
-        console.error(`❌ Error scraping Local Business Sites: ${e.message}`);
+        console.error(
+          `❌ An unexpected error occurred while scraping Local Business Sites: ${e.message}`
+        );
         continue;
+      } finally {
+        await page.close();
       }
     }
-    await page.close();
   }
 
   async scrapeMedicalDirectories() {
-    const page = await this.browser.newPage();
-    await this.setupPage(page);
-    if (
-      !this.profession.toLowerCase().includes("médecin") &&
-      !this.profession.toLowerCase().includes("docteur")
-    ) {
-      return [];
-    }
     const medicalDirectories = [
       `"ordre des médecins" "${this.city}" "${this.country}"`,
       `annuaire médecin ${this.city} maroc`,
     ];
+    if (
+      !this.profession.toLowerCase().includes("médecin") &&
+      !this.profession.toLowerCase().includes("docteur")
+    ) {
+      return;
+    }
     for (const query of medicalDirectories) {
-      if (this.allData.length >= this.limit) break;
+      const page = await this.browser.newPage();
+      await this.setupPage(page);
       try {
         const url = `https://www.google.com/search?q=${encodeURIComponent(
           query
@@ -665,21 +714,30 @@ class ComprehensiveScraper {
           this.profession,
           this.city
         );
-        for (const profile of results) {
-          if (this.allData.length >= this.limit) break;
-          profile.platform = "Medical Directories";
-          this.addUniqueProfile(profile);
-          this.progressBar.update(this.allData.length, {
-            platform: "Medical Directories",
-          });
+        if (results.length > 0) {
+          for (const profile of results) {
+            if (this.allData.length >= this.limit) break;
+            profile.platform = "Medical Directories";
+            this.addUniqueProfile(profile);
+            this.progressBar.update(this.allData.length, {
+              platform: "Medical Directories",
+            });
+          }
+        } else {
+          console.log(
+            "\n❌ No relevant records found on Medical Directories. Moving on to the next platform."
+          );
         }
         await this.delay(2000);
       } catch (e) {
-        console.error(`❌ Error scraping Medical Directories: ${e.message}`);
+        console.error(
+          `❌ An unexpected error occurred while scraping Medical Directories: ${e.message}`
+        );
         continue;
+      } finally {
+        await page.close();
       }
     }
-    await page.close();
   }
 
   getPlatformsByDepth(depth) {
