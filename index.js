@@ -6,7 +6,7 @@ const fs = require("fs");
 const PDFDocument = require("pdfkit");
 
 async function main() {
-  console.log("🚀 Professional Multi-Platform Scraper v4.0\n");
+  console.log("🚀 Professional Multi-Platform Scraper v2.0\n");
 
   const specificType = await input({
     message:
@@ -634,5 +634,12 @@ async function generatePDF(data, fields, profession, city, searchDepth) {
   doc.end();
   return filename;
 }
-
-main().catch(console.error);
+main().catch((error) => {
+  if (error.name === "ExitPromptError") {
+    console.log("\n👋 Operation cancelled by user. Goodbye!");
+    process.exit(0);
+  } else {
+    console.error("❌ An error occurred:", error.message);
+    process.exit(1);
+  }
+});
