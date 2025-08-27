@@ -3,14 +3,14 @@ const puppeteer = require("puppeteer");
 const ExcelJS = require("exceljs");
 const cliProgress = require("cli-progress");
 const fs = require("fs");
-const PDFDocument = require("pdfkit");
+const path = require("path");
 
 async function main() {
   console.log("🚀 Professional Multi-Platform Scraper v2.0\n");
 
   const specificType = await input({
     message:
-      "What profession/service are you looking for? (e.g., médecin, avocat, dentiste, etc.):",
+      "What profession/service are you looking for? (e.g., doctor, lawyer, dentist, etc.):",
     validate: (input) => (input ? true : "Search query is required."),
   });
 
@@ -66,12 +66,12 @@ async function main() {
   const limit =
     limitOption === "custom" ? parseInt(customLimit) : parseInt(limitOption);
 
+  // Updated file format options
   const fileFormat = await select({
     message: "💾 Select the output file format:",
     choices: [
       { name: "📄 Excel (.xlsx)", value: "excel" },
       { name: "📜 JSON (.json)", value: "json" },
-      { name: "🖨️ PDF (.pdf)", value: "pdf" },
     ],
   });
 
@@ -102,8 +102,6 @@ async function main() {
   );
   const results = await scrapeManager.executeProfessionalSearch(searchDepth);
 
-  await browser.close();
-
   if (results.data.length > 0) {
     let filename;
     switch (fileFormat) {
@@ -119,15 +117,6 @@ async function main() {
       case "json":
         filename = await generateJSON(
           results.data,
-          specificType,
-          city,
-          searchDepth
-        );
-        break;
-      case "pdf":
-        filename = await generatePDF(
-          results.data,
-          results.fields,
           specificType,
           city,
           searchDepth
@@ -151,6 +140,7 @@ async function main() {
     console.log("    • Platform access issues");
     console.log("    • Need to adjust search terms");
   }
+  await browser.close();
 }
 
 class ComprehensiveScraper {
@@ -281,51 +271,61 @@ class ComprehensiveScraper {
     }
   }
 
-  async extractBusinessData(card) {
-    const data = {};
-    try {
-      data.name = await card
-        .$eval(".qBF1Pd, .fontHeadlineSmall", (el) => el.textContent.trim())
-        .catch(() => "");
-      data.profile_url = await card
-        .$eval("a.hfpxzc", (el) => el.href)
-        .catch(() => "");
-      data.profession_title = await card
-        .$eval(".W4Efsd", (el) => el.textContent.trim())
-        .catch(() => "");
-      data.location = await card
-        .$eval(".W4Efsd:last-child", (el) => el.textContent.trim())
-        .catch(() => "");
-      data.rating = await card
-        .$eval(".MW4etd", (el) => el.textContent.trim())
-        .catch(() => "");
-
-      if (data.profile_url) {
-        const coords = this.extractCoordinatesFromUrl(data.profile_url);
-        data.latitude = coords.latitude;
-        data.longitude = coords.longitude;
-
-        const detailData = await this.extractGoogleMapsDetails(
-          data.profile_url
+  async scrapeGoogleSearch() {
+    const page = await this.browser.newPage();
+    await this.setupPage(page);
+    const searches = [
+      `"${this.profession}" "${this.city}" "${this.country}" contact`,
+      `cabinet ${this.profession} ${this.city} adresse`,
+    ];
+    for (const searchQuery of searches) {
+      if (this.allData.length >= this.limit) break;
+      try {
+        const url = `https://www.google.com/search?q=${encodeURIComponent(
+          searchQuery
+        )}&num=50`;
+        await page.goto(url, { waitUntil: "networkidle2" });
+        const results = await page.evaluate(
+          (profession, city) => {
+            const profiles = [];
+            const searchResults = document.querySelectorAll(".g, .tF2Cxc");
+            searchResults.forEach((result) => {
+              try {
+                const linkEl = result.querySelector('a[href^="http"]');
+                const titleEl = result.querySelector("h3");
+                const descEl = result.querySelector(".VwiC3b, .s3v9rd");
+                if (linkEl && titleEl) {
+                  const description = descEl ? descEl.textContent : "";
+                  profiles.push({
+                    name: titleEl.textContent.trim(),
+                    profile_url: linkEl.href,
+                    profession_title: profession,
+                    location: city,
+                    description: description.substring(0, 200),
+                  });
+                }
+              } catch (e) {}
+            });
+            return profiles;
+          },
+          this.profession,
+          this.city
         );
-        Object.assign(data, detailData);
+        for (const profile of results) {
+          if (this.allData.length >= this.limit) break;
+          profile.platform = "Google Search";
+          this.addUniqueProfile(profile);
+          this.progressBar.update(this.allData.length, {
+            platform: "Google Search",
+          });
+        }
+        await this.delay(2000);
+      } catch (e) {
+        console.error(`❌ Error scraping Google Search: ${e.message}`);
+        continue;
       }
-    } catch (e) {
-      return null;
     }
-    return data;
-  }
-
-  extractCoordinatesFromUrl(url) {
-    const latLongRegex = /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/;
-    const match = url.match(latLongRegex);
-    if (match) {
-      return {
-        latitude: parseFloat(match[1]),
-        longitude: parseFloat(match[2]),
-      };
-    }
-    return { latitude: "", longitude: "" };
+    await page.close();
   }
 
   async scrapeLinkedIn() {
@@ -379,8 +379,13 @@ class ComprehensiveScraper {
     await page.close();
   }
 
-  async searchGeneralDirectories(page, queries, sourceType) {
-    for (const query of queries) {
+  async scrapeProfessionalDirectories() {
+    const page = await this.browser.newPage();
+    await this.setupPage(page);
+    const directories = [
+      `annuaire "${this.profession}" "${this.city}" "${this.country}"`,
+    ];
+    for (const query of directories) {
       if (this.allData.length >= this.limit) break;
       try {
         const url = `https://www.google.com/search?q=${encodeURIComponent(
@@ -411,21 +416,266 @@ class ComprehensiveScraper {
             });
             return profiles;
           },
-          sourceType,
+          "Professional Directory",
           this.profession,
           this.city
         );
         for (const profile of results) {
           if (this.allData.length >= this.limit) break;
-          profile.platform = sourceType;
+          profile.platform = "Professional Directories";
           this.addUniqueProfile(profile);
           this.progressBar.update(this.allData.length, {
-            platform: sourceType,
+            platform: "Professional Directories",
           });
         }
         await this.delay(2000);
       } catch (e) {
-        console.error(`❌ Error scraping ${sourceType}: ${e.message}`);
+        console.error(
+          `❌ Error scraping Professional Directories: ${e.message}`
+        );
+        continue;
+      }
+    }
+    await page.close();
+  }
+  async scrapeYellowPages() {
+    const page = await this.browser.newPage();
+    await this.setupPage(page);
+    const yellowPagesQueries = [
+      `site:pagesjaunes.ma "${this.profession}" "${this.city}"`,
+      `site:telecontact.ma "${this.profession}" "${this.city}"`,
+    ];
+    for (const query of yellowPagesQueries) {
+      if (this.allData.length >= this.limit) break;
+      try {
+        const url = `https://www.google.com/search?q=${encodeURIComponent(
+          query
+        )}&num=50`;
+        await page.goto(url, { waitUntil: "networkidle2" });
+        const results = await page.evaluate(
+          (sourceType, profession, city) => {
+            const profiles = [];
+            const searchResults = document.querySelectorAll(".g, .tF2Cxc");
+            searchResults.forEach((result) => {
+              try {
+                const linkEl = result.querySelector('a[href^="http"]');
+                const titleEl = result.querySelector("h3");
+                const descEl = result.querySelector(".VwiC3b, .s3v9rd");
+                if (linkEl && titleEl) {
+                  const description = descEl ? descEl.textContent : "";
+                  profiles.push({
+                    name: titleEl.textContent.trim().split("|")[0].trim(),
+                    profile_url: linkEl.href,
+                    profession_title: profession,
+                    location: city,
+                    source_type: sourceType,
+                    description: description.substring(0, 200),
+                  });
+                }
+              } catch (e) {}
+            });
+            return profiles;
+          },
+          "Yellow Pages",
+          this.profession,
+          this.city
+        );
+        for (const profile of results) {
+          if (this.allData.length >= this.limit) break;
+          profile.platform = "Yellow Pages";
+          this.addUniqueProfile(profile);
+          this.progressBar.update(this.allData.length, {
+            platform: "Yellow Pages",
+          });
+        }
+        await this.delay(2000);
+      } catch (e) {
+        console.error(`❌ Error scraping Yellow Pages: ${e.message}`);
+        continue;
+      }
+    }
+    await page.close();
+  }
+
+  async scrapeFacebook() {
+    const page = await this.browser.newPage();
+    await this.setupPage(page);
+    const facebookQueries = [
+      `site:facebook.com/pages "${this.profession}" "${this.city}"`,
+      `site:facebook.com/public/${this.profession.replace(
+        /\s+/g,
+        "-"
+      )}-${this.city.replace(/\s+/g, "-")}`,
+    ];
+    for (const query of facebookQueries) {
+      if (this.allData.length >= this.limit) break;
+      try {
+        const url = `https://www.google.com/search?q=${encodeURIComponent(
+          query
+        )}&num=50`;
+        await page.goto(url, { waitUntil: "networkidle2" });
+        const results = await page.evaluate(
+          (sourceType, profession, city) => {
+            const profiles = [];
+            const searchResults = document.querySelectorAll(".g, .tF2Cxc");
+            searchResults.forEach((result) => {
+              try {
+                const linkEl = result.querySelector('a[href*="facebook.com"]');
+                const titleEl = result.querySelector("h3");
+                if (
+                  linkEl &&
+                  titleEl &&
+                  !linkEl.href.includes("facebook.com/login")
+                ) {
+                  profiles.push({
+                    name: titleEl.textContent.trim(),
+                    profile_url: linkEl.href,
+                    profession_title: profession,
+                    platform_specific: "Facebook Business Page",
+                  });
+                }
+              } catch (e) {}
+            });
+            return profiles;
+          },
+          this.profession,
+          this.city
+        );
+        for (const profile of results) {
+          if (this.allData.length >= this.limit) break;
+          profile.platform = "Facebook";
+          this.addUniqueProfile(profile);
+          this.progressBar.update(this.allData.length, {
+            platform: "Facebook",
+          });
+        }
+        await this.delay(2000);
+      } catch (e) {
+        console.error(`❌ Error scraping Facebook: ${e.message}`);
+        continue;
+      }
+    }
+    await page.close();
+  }
+
+  async scrapeLocalBusinessSites() {
+    const page = await this.browser.newPage();
+    await this.setupPage(page);
+    const localQueries = [
+      `${this.profession} ${this.city} maroc contact telephone`,
+      `cabinet ${this.profession} ${this.city} rendez-vous`,
+    ];
+    for (const query of localQueries) {
+      if (this.allData.length >= this.limit) break;
+      try {
+        const url = `https://www.google.com/search?q=${encodeURIComponent(
+          query
+        )}&num=50`;
+        await page.goto(url, { waitUntil: "networkidle2" });
+        const results = await page.evaluate(
+          (sourceType, profession, city) => {
+            const profiles = [];
+            const searchResults = document.querySelectorAll(".g, .tF2Cxc");
+            searchResults.forEach((result) => {
+              try {
+                const linkEl = result.querySelector('a[href^="http"]');
+                const titleEl = result.querySelector("h3");
+                const descEl = result.querySelector(".VwiC3b, .s3v9rd");
+                if (linkEl && titleEl) {
+                  const description = descEl ? descEl.textContent : "";
+                  profiles.push({
+                    name: titleEl.textContent.trim().split("|")[0].trim(),
+                    profile_url: linkEl.href,
+                    profession_title: profession,
+                    location: city,
+                    source_type: sourceType,
+                    description: description.substring(0, 200),
+                  });
+                }
+              } catch (e) {}
+            });
+            return profiles;
+          },
+          "Local Business Site",
+          this.profession,
+          this.city
+        );
+        for (const profile of results) {
+          if (this.allData.length >= this.limit) break;
+          profile.platform = "Local Business Sites";
+          this.addUniqueProfile(profile);
+          this.progressBar.update(this.allData.length, {
+            platform: "Local Business Sites",
+          });
+        }
+        await this.delay(2000);
+      } catch (e) {
+        console.error(`❌ Error scraping Local Business Sites: ${e.message}`);
+        continue;
+      }
+    }
+    await page.close();
+  }
+
+  async scrapeMedicalDirectories() {
+    const page = await this.browser.newPage();
+    await this.setupPage(page);
+    if (
+      !this.profession.toLowerCase().includes("médecin") &&
+      !this.profession.toLowerCase().includes("docteur")
+    ) {
+      return [];
+    }
+    const medicalDirectories = [
+      `"ordre des médecins" "${this.city}" "${this.country}"`,
+      `annuaire médecin ${this.city} maroc`,
+    ];
+    for (const query of medicalDirectories) {
+      if (this.allData.length >= this.limit) break;
+      try {
+        const url = `https://www.google.com/search?q=${encodeURIComponent(
+          query
+        )}&num=50`;
+        await page.goto(url, { waitUntil: "networkidle2" });
+        const results = await page.evaluate(
+          (sourceType, profession, city) => {
+            const profiles = [];
+            const searchResults = document.querySelectorAll(".g, .tF2Cxc");
+            searchResults.forEach((result) => {
+              try {
+                const linkEl = result.querySelector('a[href^="http"]');
+                const titleEl = result.querySelector("h3");
+                const descEl = result.querySelector(".VwiC3b, .s3v9rd");
+                if (linkEl && titleEl) {
+                  const description = descEl ? descEl.textContent : "";
+                  profiles.push({
+                    name: titleEl.textContent.trim().split("|")[0].trim(),
+                    profile_url: linkEl.href,
+                    profession_title: profession,
+                    location: city,
+                    source_type: sourceType,
+                    description: description.substring(0, 200),
+                  });
+                }
+              } catch (e) {}
+            });
+            return profiles;
+          },
+          "Medical Directory",
+          this.profession,
+          this.city
+        );
+        for (const profile of results) {
+          if (this.allData.length >= this.limit) break;
+          profile.platform = "Medical Directories";
+          this.addUniqueProfile(profile);
+          this.progressBar.update(this.allData.length, {
+            platform: "Medical Directories",
+          });
+        }
+        await this.delay(2000);
+      } catch (e) {
+        console.error(`❌ Error scraping Medical Directories: ${e.message}`);
         continue;
       }
     }
@@ -465,6 +715,53 @@ class ComprehensiveScraper {
       ],
     };
     return platforms[depth] || platforms.comprehensive;
+  }
+
+  async extractBusinessData(card) {
+    const data = {};
+    try {
+      data.name = await card
+        .$eval(".qBF1Pd, .fontHeadlineSmall", (el) => el.textContent.trim())
+        .catch(() => "");
+      data.profile_url = await card
+        .$eval("a.hfpxzc", (el) => el.href)
+        .catch(() => "");
+      data.profession_title = await card
+        .$eval(".W4Efsd", (el) => el.textContent.trim())
+        .catch(() => "");
+      data.location = await card
+        .$eval(".W4Efsd:last-child", (el) => el.textContent.trim())
+        .catch(() => "");
+      data.rating = await card
+        .$eval(".MW4etd", (el) => el.textContent.trim())
+        .catch(() => "");
+
+      if (data.profile_url) {
+        const coords = this.extractCoordinatesFromUrl(data.profile_url);
+        data.latitude = coords.latitude;
+        data.longitude = coords.longitude;
+
+        const detailData = await this.extractGoogleMapsDetails(
+          data.profile_url
+        );
+        Object.assign(data, detailData);
+      }
+    } catch (e) {
+      return null;
+    }
+    return data;
+  }
+
+  extractCoordinatesFromUrl(url) {
+    const latLongRegex = /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/;
+    const match = url.match(latLongRegex);
+    if (match) {
+      return {
+        latitude: parseFloat(match[1]),
+        longitude: parseFloat(match[2]),
+      };
+    }
+    return { latitude: "", longitude: "" };
   }
 
   async extractGoogleMapsDetails(url) {
@@ -603,37 +900,6 @@ async function generateJSON(data, profession, city, searchDepth) {
   return filename;
 }
 
-async function generatePDF(data, fields, profession, city, searchDepth) {
-  const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, "-");
-  const filename = `scraped_${profession.replace(/\s+/g, "_")}_${city.replace(
-    /\s+/g,
-    "_"
-  )}_${searchDepth}_${timestamp}.pdf`;
-  const doc = new PDFDocument();
-  doc.pipe(fs.createWriteStream(filename));
-
-  doc.fontSize(16).text(`Professional Scraped Data`, { align: "center" });
-  doc
-    .fontSize(12)
-    .text(`Search: ${profession} in ${city}`, { align: "center" });
-  doc.fontSize(10).text(`Records Found: ${data.length}`, { align: "center" });
-  doc.moveDown();
-
-  doc.fontSize(8);
-
-  data.forEach((record, index) => {
-    doc.text(`Record #${index + 1}:`);
-    fields.forEach((field) => {
-      if (record[field]) {
-        doc.text(`  ${field}: ${record[field]}`);
-      }
-    });
-    doc.moveDown();
-  });
-
-  doc.end();
-  return filename;
-}
 main().catch((error) => {
   if (error.name === "ExitPromptError") {
     console.log("\n👋 Operation cancelled by user. Goodbye!");
