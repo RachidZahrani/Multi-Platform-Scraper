@@ -66,7 +66,6 @@ async function main() {
   const limit =
     limitOption === "custom" ? parseInt(customLimit) : parseInt(limitOption);
 
-  // Updated file format options
   const fileFormat = await select({
     message: "💾 Select the output file format:",
     choices: [
