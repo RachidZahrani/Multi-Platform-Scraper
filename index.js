@@ -3,7 +3,6 @@ const puppeteer = require("puppeteer");
 const ExcelJS = require("exceljs");
 const cliProgress = require("cli-progress");
 const fs = require("fs");
-const path = require("path");
 
 async function main() {
   console.log("🚀 Professional Multi-Platform Scraper v2.0\n");
